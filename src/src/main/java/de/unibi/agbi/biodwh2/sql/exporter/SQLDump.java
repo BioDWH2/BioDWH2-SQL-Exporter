@@ -3,6 +3,7 @@ package de.unibi.agbi.biodwh2.sql.exporter;
 import de.unibi.agbi.biodwh2.core.lang.Type;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.core.model.graph.Node;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -10,8 +11,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 final class SQLDump {
-    private final int insertBatchSize = 100;
-    private final String schemaName = "biodwh2";
+    private int insertBatchSize = 100;
+    private String schemaName = "biodwh2";
     private final BufferedWriter writer;
     private final Graph graph;
 
@@ -20,26 +21,60 @@ final class SQLDump {
         this.graph = graph;
     }
 
+    public int getInsertBatchSize() {
+        return insertBatchSize;
+    }
+
+    public void setInsertBatchSize(final int insertBatchSize) {
+        this.insertBatchSize = Math.max(1, insertBatchSize);
+    }
+
+    public String getSchemaName() {
+        return schemaName;
+    }
+
+    public void setSchemaName(final String schemaName) {
+        this.schemaName = schemaName == null ? null : schemaName.trim();
+    }
+
+    private String getSchemaPrefix() {
+        return StringUtils.isBlank(schemaName) ? "" : "`" + schemaName + "`.";
+    }
+
     public void write() throws IOException {
         writeSchema();
         writeData();
     }
 
     private void writeSchema() throws IOException {
-        writeLine("-- -----------------------------------------------------");
-        writeLine("-- Schema " + schemaName);
-        writeLine("-- -----------------------------------------------------");
-        writeLine("CREATE SCHEMA IF NOT EXISTS `" + schemaName +
-                  "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-        writeLine("USE `" + schemaName + "`;");
+        if (getSchemaPrefix().length() > 0) {
+            writeLine("-- -----------------------------------------------------");
+            writeLine("-- Schema " + schemaName);
+            writeLine("-- -----------------------------------------------------");
+            writeLine("CREATE SCHEMA IF NOT EXISTS `" + schemaName +
+                      "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+            writeLine("USE `" + schemaName + "`;");
+        }
         writer.newLine();
+        writeNodeTables();
+        writeEdgeTables();
+    }
+
+    private void writeLine(final String line) throws IOException {
+        writer.write(line);
+        writer.newLine();
+    }
+
+    private void writeNodeTables() throws IOException {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Node tables");
         writeLine("-- -----------------------------------------------------");
         for (final String label : graph.getNodeLabels()) {
-            writeLine("DROP TABLE IF EXISTS `" + schemaName + "`.`" + label + "`;");
-            writeLine("CREATE TABLE IF NOT EXISTS `" + schemaName + "`.`" + label + "` (");
+            writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + "`" + label + "`;");
+            writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + "`" + label + "` (");
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
+                if ("__label".equals(entry.getKey()))
+                    continue;
                 writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " NULL,");
             }
             // TODO indices
@@ -48,16 +83,6 @@ final class SQLDump {
             writeLine(") ENGINE = InnoDB;");
             writer.newLine();
         }
-        writeLine("-- -----------------------------------------------------");
-        writeLine("-- Edge tables");
-        writeLine("-- -----------------------------------------------------");
-        // TODO
-        writer.newLine();
-    }
-
-    private void writeLine(final String line) throws IOException {
-        writer.write(line);
-        writer.newLine();
     }
 
     /**
@@ -65,7 +90,7 @@ final class SQLDump {
      */
     private String getSQLType(final String key, final Type type) {
         if (type.isList()) {
-            // TODO
+            return "JSON";
         } else {
             if ("__id".equals(key) || "__from_id".equals(key) || "__to_id".equals(key))
                 return "UNSIGNED BIGINT";
@@ -83,9 +108,19 @@ final class SQLDump {
                 return "FLOAT";
             if (type.getType() == Double.class)
                 return "DOUBLE";
+            if (type.getType() == Boolean.class || type.getType() == Byte.class)
+                return "TINYINT";
             // TODO
         }
         return "";
+    }
+
+    private void writeEdgeTables() throws IOException {
+        writeLine("-- -----------------------------------------------------");
+        writeLine("-- Edge tables");
+        writeLine("-- -----------------------------------------------------");
+        // TODO
+        writer.newLine();
     }
 
     private void writeData() throws IOException {
@@ -122,16 +157,41 @@ final class SQLDump {
 
     private void writeInsertBatch(final String label, final List<Node> batch) throws IOException {
         final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForNodeLabel(label);
-        final String[] keys = propertyKeyTypes.keySet().toArray(new String[0]);
+        final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
+                String[]::new);
         final String keysString = Arrays.stream(keys).collect(Collectors.joining("`, `", "`", "`"));
-        writeLine("INSERT INTO `" + schemaName + "`.`" + label + "` (" + keysString + ") VALUES");
+        writeLine("INSERT INTO " + getSchemaPrefix() + "`" + label + "` (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Node node = batch.get(i);
-            // TODO: proper quoting
-            final String values = Arrays.stream(keys).map(node::get).map(o -> o != null ? "\"" + o + "\"" : "NULL")
-                                        .collect(Collectors.joining(", "));
+            final String values = Arrays.stream(keys).map(
+                    key -> formatProperty(key, propertyKeyTypes.get(key), node.get(key))).collect(
+                    Collectors.joining(", "));
             writeLine("  (" + values + ")" + (i < batch.size() - 1 ? "," : ";"));
         }
+    }
+
+    private String formatProperty(final String key, final Type type, final Object value) {
+        if (value == null)
+            return "NULL";
+        if (type.isList()) {
+            if (Collection.class.isAssignableFrom(type.getType())) {
+                final Collection<?> collection = (Collection<?>) value;
+                final String values = collection.stream().map(e -> formatProperty(type.getComponentType(), e, "\""))
+                                                .collect(Collectors.joining(", "));
+                return "'[" + values + "]'";
+            }
+            // TODO
+            return "";
+        }
+        return formatProperty(type.getType(), value, "'");
+    }
+
+    private String formatProperty(final Class<?> type, final Object value, String quoteChar) {
+        if (type == Long.class || type == Integer.class || type == Short.class || type == Byte.class)
+            return value.toString();
+        if (type == Boolean.class)
+            return value.toString().toUpperCase(Locale.ROOT);
+        return quoteChar + value + quoteChar;
     }
 
     private void writeEdgeData() throws IOException {

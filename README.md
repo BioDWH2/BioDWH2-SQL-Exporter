@@ -18,8 +18,14 @@ Creating an SQL database from any workspace is done using the following command.
 
 ## Help
 ~~~
-Usage: BioDWH2-Neo4j-Server.jar [-h] [-c=<workspacePath>]
+Usage: BioDWH2-SQL-Exporter.jar [-h] [-c=<workspacePath>]
+                                [--insert-batch-size=<batchSize>]
+                                [--schema-name=<schemaName>]
   -c, --create=<workspacePath>
-                      Create an SQL database from the workspace graph
-  -h, --help          print this message
+               Create an SQL database from the workspace graph
+  -h, --help   print this message
+      --insert-batch-size=<batchSize>
+               Batch size of insert statements (default: 100)
+      --schema-name=<schemaName>
+               SQL schema name (default: biodwh2)
 ~~~

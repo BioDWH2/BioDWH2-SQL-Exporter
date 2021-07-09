@@ -49,7 +49,7 @@ public class SQLExporter {
         }
         //noinspection ResultOfMethodCallIgnored
         Paths.get(workspacePath, "sql").toFile().mkdir();
-        exportSQL(workspacePath);
+        exportSQL(workspacePath, commandLine.insertBatchSize, commandLine.schemaName);
         storeWorkspaceHash(workspacePath);
         LOGGER.info("SQL database successfully created.");
     }
@@ -65,7 +65,7 @@ public class SQLExporter {
         return true;
     }
 
-    private void exportSQL(final String workspacePath) {
+    private void exportSQL(final String workspacePath, final Integer insertBatchSize, final String schemaName) {
         if (LOGGER.isInfoEnabled())
             LOGGER.info("Creating sql database...");
         Path databasePath = Paths.get(workspacePath, "sql", "dump.sql");
@@ -73,7 +73,12 @@ public class SQLExporter {
              final OutputStreamWriter streamWriter = new OutputStreamWriter(stream, StandardCharsets.UTF_8);
              final BufferedWriter writer = new BufferedWriter(streamWriter); final Graph graph = new Graph(
                 Paths.get(workspacePath, "sources/mapped.db"), true, true)) {
-            new SQLDump(writer, graph).write();
+            final SQLDump dump = new SQLDump(writer, graph);
+            if (insertBatchSize != null)
+                dump.setInsertBatchSize(insertBatchSize);
+            if (schemaName != null)
+                dump.setSchemaName(schemaName);
+            dump.write();
         } catch (Exception e) {
             if (LOGGER.isErrorEnabled())
                 LOGGER.error("Failed to create sql database '" + databasePath + "'", e);
