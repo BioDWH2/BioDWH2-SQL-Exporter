@@ -2,6 +2,7 @@ package de.unibi.agbi.biodwh2.sql.exporter;
 
 import de.unibi.agbi.biodwh2.core.lang.Type;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
+import de.unibi.agbi.biodwh2.core.model.graph.IndexDescription;
 import de.unibi.agbi.biodwh2.core.model.graph.Node;
 import org.apache.commons.lang3.StringUtils;
 
@@ -21,16 +22,8 @@ final class SQLDump {
         this.graph = graph;
     }
 
-    public int getInsertBatchSize() {
-        return insertBatchSize;
-    }
-
     public void setInsertBatchSize(final int insertBatchSize) {
         this.insertBatchSize = Math.max(1, insertBatchSize);
-    }
-
-    public String getSchemaName() {
-        return schemaName;
     }
 
     public void setSchemaName(final String schemaName) {
@@ -77,7 +70,13 @@ final class SQLDump {
                     continue;
                 writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " NULL,");
             }
-            // TODO indices
+            for (final IndexDescription index : graph.indexDescriptions())
+                if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
+                    final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
+                    final String indexName =
+                            index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
+                    writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
+                }
             writeLine("  PRIMARY KEY (`__id`),");
             writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC))");
             writeLine(") ENGINE = InnoDB;");
