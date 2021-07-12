@@ -68,18 +68,19 @@ final class SQLDump {
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
                 if ("__label".equals(entry.getKey()))
                     continue;
-                writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " NULL,");
+                writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
+                          getSQLTypeAttributes(entry.getKey(), entry.getValue()) + ",");
             }
             for (final IndexDescription index : graph.indexDescriptions())
                 if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
                     final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
                     final String indexName =
                             index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
-                    writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
+                    // TODO: writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
                 }
             writeLine("  PRIMARY KEY (`__id`),");
-            writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC))");
-            writeLine(") ENGINE = InnoDB;");
+            writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC)");
+            writeLine(");");
             writer.newLine();
         }
     }
@@ -92,7 +93,7 @@ final class SQLDump {
             return "JSON";
         } else {
             if ("__id".equals(key) || "__from_id".equals(key) || "__to_id".equals(key))
-                return "UNSIGNED BIGINT";
+                return "BIGINT UNSIGNED";
             if ("__label".equals(key))
                 return "VARCHAR(128)";
             if (type.getType() == String.class)
@@ -112,6 +113,12 @@ final class SQLDump {
             // TODO
         }
         return "";
+    }
+
+    private String getSQLTypeAttributes(final String key, final Type type) {
+        if ("__id".equals(key) || "__from_id".equals(key) || "__to_id".equals(key))
+            return "NOT NULL";
+        return "NULL";
     }
 
     private void writeEdgeTables() throws IOException {
@@ -177,7 +184,12 @@ final class SQLDump {
                 final Collection<?> collection = (Collection<?>) value;
                 final String values = collection.stream().map(e -> formatProperty(type.getComponentType(), e, "\""))
                                                 .collect(Collectors.joining(", "));
-                return "'[" + values + "]'";
+                return "'[" + escapeQuoting(values, "'") + "]'";
+            } else if (type.getType().isArray()) {
+                final Object[] array = (Object[]) value;
+                final String values = Arrays.stream(array).map(e -> formatProperty(type.getComponentType(), e, "\""))
+                                            .collect(Collectors.joining(", "));
+                return "'[" + escapeQuoting(values, "'") + "]'";
             }
             // TODO
             return "";
@@ -185,12 +197,16 @@ final class SQLDump {
         return formatProperty(type.getType(), value, "'");
     }
 
-    private String formatProperty(final Class<?> type, final Object value, String quoteChar) {
+    private String formatProperty(final Class<?> type, final Object value, final String quoteChar) {
         if (type == Long.class || type == Integer.class || type == Short.class || type == Byte.class)
             return value.toString();
         if (type == Boolean.class)
             return value.toString().toUpperCase(Locale.ROOT);
-        return quoteChar + value + quoteChar;
+        return quoteChar + escapeQuoting(value.toString(), quoteChar) + quoteChar;
+    }
+
+    private String escapeQuoting(final String value, final String quoteChar) {
+        return StringUtils.replace(value, quoteChar, '\\' + quoteChar);
     }
 
     private void writeEdgeData() throws IOException {
