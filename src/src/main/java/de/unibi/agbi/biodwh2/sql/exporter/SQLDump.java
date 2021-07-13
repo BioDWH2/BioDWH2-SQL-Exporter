@@ -40,8 +40,10 @@ final class SQLDump {
     }
 
     public void write() throws IOException {
+        writeLine("SET FOREIGN_KEY_CHECKS = 0;");
         writeSchema();
         writeData();
+        writeLine("SET FOREIGN_KEY_CHECKS = 1;");
     }
 
     private void writeSchema() throws IOException {
@@ -76,7 +78,7 @@ final class SQLDump {
                 if ("__label".equals(entry.getKey()))
                     continue;
                 writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
-                          getSQLTypeAttributes(entry.getKey(), entry.getValue()) + ",");
+                          getSQLTypeAttributes(entry.getKey()) + ",");
             }
             for (final IndexDescription index : graph.indexDescriptions())
                 if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
@@ -123,7 +125,7 @@ final class SQLDump {
         return "";
     }
 
-    private String getSQLTypeAttributes(final String key, final Type type) {
+    private String getSQLTypeAttributes(final String key) {
         if ("__id".equals(key) || "__from_id".equals(key) || "__to_id".equals(key))
             return "NOT NULL";
         return "NULL";
@@ -133,6 +135,7 @@ final class SQLDump {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Edge tables");
         writeLine("-- -----------------------------------------------------");
+        int foreignKeyCounter = 1;
         for (final String label : graph.getEdgeLabels()) {
             final Map<String, Set<String>> fromToLabelsMap = new HashMap<>();
             for (final Edge edge : graph.getEdges(label)) {
@@ -143,7 +146,8 @@ final class SQLDump {
             final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
             for (final String fromLabel : fromToLabelsMap.keySet()) {
                 for (final String toLabel : fromToLabelsMap.get(fromLabel)) {
-                    writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes);
+                    writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes, foreignKeyCounter);
+                    foreignKeyCounter++;
                 }
             }
 
@@ -152,7 +156,8 @@ final class SQLDump {
     }
 
     private void writeEdgeTable(final String label, final String fromLabel, final String toLabel,
-                                final Map<String, Type> propertyKeyTypes) throws IOException {
+                                final Map<String, Type> propertyKeyTypes,
+                                final int foreignKeyCounter) throws IOException {
         final String tableName = getEdgeTableName(label, fromLabel, toLabel);
         writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + "`" + tableName + "`;");
         writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + "`" + tableName + "` (");
@@ -160,7 +165,7 @@ final class SQLDump {
             if ("__label".equals(entry.getKey()))
                 continue;
             writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
-                      getSQLTypeAttributes(entry.getKey(), entry.getValue()) + ",");
+                      getSQLTypeAttributes(entry.getKey()) + ",");
         }
         for (final IndexDescription index : graph.indexDescriptions())
             if (index.getTarget() == IndexDescription.Target.EDGE && index.getLabel().equals(label)) {
@@ -171,14 +176,38 @@ final class SQLDump {
             }
         writeLine("  PRIMARY KEY (`__id`),");
         writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC),");
-        writeLine("  FOREIGN KEY (`__from_id`) REFERENCES " + getSchemaPrefix() + "`" + fromLabel + "`(`__id`),");
-        writeLine("  FOREIGN KEY (`__to_id`) REFERENCES " + getSchemaPrefix() + "`" + toLabel + "`(`__id`)");
+        writeLine("  FOREIGN KEY `fk" + foreignKeyCounter + "__from_id` (`__from_id`) REFERENCES " + getSchemaPrefix() +
+                  "`" + fromLabel + "`(`__id`),");
+        writeLine(
+                "  FOREIGN KEY `fk" + foreignKeyCounter + "__to_id` (`__to_id`) REFERENCES " + getSchemaPrefix() + "`" +
+                toLabel + "`(`__id`)");
         writeLine(");");
         writer.newLine();
     }
 
     private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
-        return fromLabel + "__" + label + "__" + toLabel;
+        final String tableName = fromLabel + "__" + label + "__" + toLabel;
+        if (tableName.length() <= 52)
+            return tableName;
+        final StringBuilder builder = new StringBuilder();
+        final String[] fromLabelParts = StringUtils.split(fromLabel, "_", 2);
+        if (fromLabelParts.length == 2) {
+            for (final char c : fromLabelParts[0].toCharArray())
+                if (!Character.isLowerCase(c))
+                    builder.append(c);
+            builder.append('_').append(fromLabelParts[1]);
+        } else
+            builder.append(fromLabel);
+        builder.append("__").append(label).append("__");
+        final String[] toLabelParts = StringUtils.split(toLabel, "_", 2);
+        if (toLabelParts.length == 2) {
+            for (final char c : toLabelParts[0].toCharArray())
+                if (!Character.isLowerCase(c))
+                    builder.append(c);
+            builder.append('_').append(toLabelParts[1]);
+        } else
+            builder.append(toLabel);
+        return builder.toString();
     }
 
     private void writeData() throws IOException {
