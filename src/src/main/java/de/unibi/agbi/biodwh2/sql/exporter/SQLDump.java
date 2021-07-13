@@ -170,7 +170,9 @@ final class SQLDump {
                 // TODO: writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
             }
         writeLine("  PRIMARY KEY (`__id`),");
-        writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC)");
+        writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC),");
+        writeLine("  FOREIGN KEY (`__from_id`) REFERENCES " + getSchemaPrefix() + "`" + fromLabel + "`(`__id`),");
+        writeLine("  FOREIGN KEY (`__to_id`) REFERENCES " + getSchemaPrefix() + "`" + toLabel + "`(`__id`)");
         writeLine(");");
         writer.newLine();
     }
