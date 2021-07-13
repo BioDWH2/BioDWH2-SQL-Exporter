@@ -1,10 +1,13 @@
 package de.unibi.agbi.biodwh2.sql.exporter;
 
 import de.unibi.agbi.biodwh2.core.lang.Type;
+import de.unibi.agbi.biodwh2.core.model.graph.Edge;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.core.model.graph.IndexDescription;
 import de.unibi.agbi.biodwh2.core.model.graph.Node;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -12,6 +15,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 final class SQLDump {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SQLExporter.class);
+
     private int insertBatchSize = 100;
     private String schemaName = "biodwh2";
     private final BufferedWriter writer;
@@ -40,6 +45,8 @@ final class SQLDump {
     }
 
     private void writeSchema() throws IOException {
+        if (LOGGER.isInfoEnabled())
+            LOGGER.info("Exporting schema...");
         if (getSchemaPrefix().length() > 0) {
             writeLine("-- -----------------------------------------------------");
             writeLine("-- Schema " + schemaName);
@@ -96,7 +103,7 @@ final class SQLDump {
                 return "BIGINT UNSIGNED";
             if ("__label".equals(key))
                 return "VARCHAR(128)";
-            if (type.getType() == String.class)
+            if (CharSequence.class.isAssignableFrom(type.getType()))
                 return "MEDIUMTEXT";
             if (type.getType() == Integer.class)
                 return "INT";
@@ -110,8 +117,9 @@ final class SQLDump {
                 return "DOUBLE";
             if (type.getType() == Boolean.class || type.getType() == Byte.class)
                 return "TINYINT";
-            // TODO
         }
+        if (LOGGER.isWarnEnabled())
+            LOGGER.warn("Failed to retrieve SQL type for key '" + key + "' and type '" + type.getType());
         return "";
     }
 
@@ -130,6 +138,8 @@ final class SQLDump {
     }
 
     private void writeData() throws IOException {
+        if (LOGGER.isInfoEnabled())
+            LOGGER.info("Exporting data...");
         writeNodeData();
         writeEdgeData();
     }
@@ -140,6 +150,8 @@ final class SQLDump {
         writeLine("-- -----------------------------------------------------");
         writer.newLine();
         for (final String label : graph.getNodeLabels()) {
+            if (LOGGER.isInfoEnabled())
+                LOGGER.info("Exporting nodes with label " + label + "...");
             writeLine("-- -----------------------------------------------------");
             writeLine("-- Node data for label " + label);
             writeLine("-- -----------------------------------------------------");
@@ -156,7 +168,6 @@ final class SQLDump {
                 writeInsertBatch(label, batch);
                 batch.clear();
             }
-            // TODO
             writer.newLine();
         }
     }
@@ -191,7 +202,8 @@ final class SQLDump {
                                             .collect(Collectors.joining(", "));
                 return "'[" + escapeQuoting(values, "'") + "]'";
             }
-            // TODO
+            if (LOGGER.isWarnEnabled())
+                LOGGER.warn("Failed to format list property for key '" + key + "' and type '" + type.getType());
             return "";
         }
         return formatProperty(type.getType(), value, "'");
@@ -210,6 +222,58 @@ final class SQLDump {
     }
 
     private void writeEdgeData() throws IOException {
+        writeLine("-- -----------------------------------------------------");
+        writeLine("-- Edge data");
+        writeLine("-- -----------------------------------------------------");
+        writer.newLine();
+        for (final String label : graph.getEdgeLabels()) {
+            if (LOGGER.isInfoEnabled())
+                LOGGER.info("Exporting edges with label " + label + "...");
+            writeLine("-- -----------------------------------------------------");
+            writeLine("-- Edge data for label " + label);
+            writeLine("-- -----------------------------------------------------");
+            writer.newLine();
+            final Map<String, List<Edge>> batches = new HashMap<>();
+            for (final Edge edge : graph.getEdges(label)) {
+                final String fromLabel = graph.getNode(edge.getFromId()).getLabel();
+                final String toLabel = graph.getNode(edge.getToId()).getLabel();
+                final String labelKey = fromLabel + "|" + toLabel;
+                final List<Edge> batch = batches.computeIfAbsent(labelKey, k -> new ArrayList<>());
+                batch.add(edge);
+                if (batch.size() == insertBatchSize) {
+                    writeInsertBatch(label, getEdgeTableName(label, fromLabel, toLabel), batch);
+                    batch.clear();
+                }
+            }
+            for (final String labelKey : batches.keySet()) {
+                final List<Edge> batch = batches.get(labelKey);
+                if (batch.size() > 0) {
+                    final String[] labelParts = StringUtils.split(labelKey, "|", 2);
+                    writeInsertBatch(label, getEdgeTableName(label, labelParts[0], labelParts[1]), batch);
+                    batch.clear();
+                }
+            }
+            writer.newLine();
+        }
+    }
 
+    private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
+        return fromLabel + "__" + label + "__" + toLabel;
+    }
+
+    private void writeInsertBatch(final String label, final String tableLabel,
+                                  final List<Edge> batch) throws IOException {
+        final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
+        final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
+                String[]::new);
+        final String keysString = Arrays.stream(keys).collect(Collectors.joining("`, `", "`", "`"));
+        writeLine("INSERT INTO " + getSchemaPrefix() + "`" + tableLabel + "` (" + keysString + ") VALUES");
+        for (int i = 0; i < batch.size(); i++) {
+            final Edge edge = batch.get(i);
+            final String values = Arrays.stream(keys).map(
+                    key -> formatProperty(key, propertyKeyTypes.get(key), edge.get(key))).collect(
+                    Collectors.joining(", "));
+            writeLine("  (" + values + ")" + (i < batch.size() - 1 ? "," : ";"));
+        }
     }
 }
