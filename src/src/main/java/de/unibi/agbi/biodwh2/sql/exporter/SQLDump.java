@@ -133,8 +133,50 @@ final class SQLDump {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Edge tables");
         writeLine("-- -----------------------------------------------------");
-        // TODO
+        for (final String label : graph.getEdgeLabels()) {
+            final Map<String, Set<String>> fromToLabelsMap = new HashMap<>();
+            for (final Edge edge : graph.getEdges(label)) {
+                final String fromLabel = graph.getNode(edge.getFromId()).getLabel();
+                final String toLabel = graph.getNode(edge.getToId()).getLabel();
+                fromToLabelsMap.computeIfAbsent(fromLabel, k -> new HashSet<>()).add(toLabel);
+            }
+            final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
+            for (final String fromLabel : fromToLabelsMap.keySet()) {
+                for (final String toLabel : fromToLabelsMap.get(fromLabel)) {
+                    writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes);
+                }
+            }
+
+        }
         writer.newLine();
+    }
+
+    private void writeEdgeTable(final String label, final String fromLabel, final String toLabel,
+                                final Map<String, Type> propertyKeyTypes) throws IOException {
+        final String tableName = getEdgeTableName(label, fromLabel, toLabel);
+        writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + "`" + tableName + "`;");
+        writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + "`" + tableName + "` (");
+        for (final Map.Entry<String, Type> entry : propertyKeyTypes.entrySet()) {
+            if ("__label".equals(entry.getKey()))
+                continue;
+            writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
+                      getSQLTypeAttributes(entry.getKey(), entry.getValue()) + ",");
+        }
+        for (final IndexDescription index : graph.indexDescriptions())
+            if (index.getTarget() == IndexDescription.Target.EDGE && index.getLabel().equals(label)) {
+                final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
+                final String indexName =
+                        index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
+                // TODO: writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
+            }
+        writeLine("  PRIMARY KEY (`__id`),");
+        writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC)");
+        writeLine(");");
+        writer.newLine();
+    }
+
+    private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
+        return fromLabel + "__" + label + "__" + toLabel;
     }
 
     private void writeData() throws IOException {
@@ -255,10 +297,6 @@ final class SQLDump {
             }
             writer.newLine();
         }
-    }
-
-    private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
-        return fromLabel + "__" + label + "__" + toLabel;
     }
 
     private void writeInsertBatch(final String label, final String tableLabel,
