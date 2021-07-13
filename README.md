@@ -1,6 +1,9 @@
 ![Java CI](https://github.com/BioDWH2/BioDWH2-SQL-Exporter/workflows/Java%20CI/badge.svg?branch=develop) ![Release](https://img.shields.io/github/v/release/BioDWH2/BioDWH2-SQL-Exporter) ![Downloads](https://img.shields.io/github/downloads/BioDWH2/BioDWH2-SQL-Exporter/total) ![License](https://img.shields.io/github/license/BioDWH2/BioDWH2-SQL-Exporter)
 
 # BioDWH2-SQL-Exporter
+| :warning: The SQL-Exporter is still experimental! For a stable solution, please try the [BioDWH2-Neo4j-Server](https://github.com/BioDWH2/BioDWH2-Neo4j-Server) or directly use the mapped GraphML file. |
+| --- |
+
 **BioDWH2** is an easy-to-use, automated, graph-based data warehouse and mapping tool for bioinformatics and medical informatics. The main repository can be found [here](https://github.com/BioDWH2/BioDWH2).
 
 This repository contains the **BioDWH2-SQL-Exporter** utility which can be used to export a BioDWH2 graph database into a relational SQL database. There is no need for any SQL installation.
