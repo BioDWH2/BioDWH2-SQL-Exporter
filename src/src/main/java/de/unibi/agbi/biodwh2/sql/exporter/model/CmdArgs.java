@@ -12,10 +12,14 @@ public class CmdArgs {
     public String create;
     @CommandLine.Option(names = {
             "--insert-batch-size"
-    }, arity = "1", paramLabel = "<batchSize>", description = "Batch size of insert statements (default: 100)", order = 3)
+    }, arity = "1", paramLabel = "<batchSize>", description = "Batch size of insert statements (default: 100)", defaultValue = "100", order = 3)
     public Integer insertBatchSize;
     @CommandLine.Option(names = {
             "--schema-name"
-    }, arity = "1", paramLabel = "<schemaName>", description = "SQL schema name (default: biodwh2)", order = 4)
+    }, arity = "1", paramLabel = "<schemaName>", description = "SQL schema name (default: biodwh2)", defaultValue = "biodwh2", order = 4)
     public String schemaName;
+    @CommandLine.Option(names = {
+            "--target"
+    }, arity = "1", paramLabel = "<target>", description = "SQL DBMS target [mysql, mariadb, sqlite, postgresql, mssql] (default: mysql)", defaultValue = "mysql", order = 5)
+    public String target;
 }

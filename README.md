@@ -19,6 +19,17 @@ Creating an SQL database from any workspace is done using the following command.
 > java -jar BioDWH2-SQL-Exporter.jar --create /path/to/workspace
 ~~~
 
+## Limitations
+Depending on the selected SQL target DBMS, identifier length limitations need to be adhered to.
+
+|       DBMS | Identifier length | Reference                                                                          |
+|-----------:|------------------:|------------------------------------------------------------------------------------|
+|      MySQL |                64 | [ref](https://dev.mysql.com/doc/refman/8.0/en/identifier-length.html)              |
+|    MariaDB |                64 | [ref](https://mariadb.com/kb/en/identifier-names/#maximum-length)                  |
+| PostgreSQL |                63 | [ref](https://www.postgresql.org/docs/current/limits.html)                         |
+|     sqlite |                 - | [ref](https://www.sqlite.org/limits.html)                                          |
+|      MSSQL |               128 | [ref](https://www.c-sharpcorner.com/blogs/maximum-length-of-objects-in-sql-server) |
+
 ## Help
 ~~~
 Usage: BioDWH2-SQL-Exporter.jar [-h] [-c=<workspacePath>]
@@ -31,4 +42,6 @@ Usage: BioDWH2-SQL-Exporter.jar [-h] [-c=<workspacePath>]
                Batch size of insert statements (default: 100)
       --schema-name=<schemaName>
                SQL schema name (default: biodwh2)
+      --target=<target>
+               SQL DBMS target [mysql, mariadb, sqlite, postgresql, mssql] (default: mysql)
 ~~~

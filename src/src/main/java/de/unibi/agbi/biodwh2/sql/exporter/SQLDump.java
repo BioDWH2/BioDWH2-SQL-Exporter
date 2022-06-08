@@ -5,6 +5,7 @@ import de.unibi.agbi.biodwh2.core.model.graph.Edge;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.core.model.graph.IndexDescription;
 import de.unibi.agbi.biodwh2.core.model.graph.Node;
+import de.unibi.agbi.biodwh2.sql.exporter.model.Target;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,7 @@ final class SQLDump {
     private String schemaName = "biodwh2";
     private final BufferedWriter writer;
     private final Graph graph;
+    private Target target = Target.MySQL;
 
     public SQLDump(final BufferedWriter writer, final Graph graph) {
         this.writer = writer;
@@ -35,27 +37,53 @@ final class SQLDump {
         this.schemaName = schemaName == null ? null : schemaName.trim();
     }
 
+    public void setTarget(final Target target) {
+        this.target = target;
+    }
+
+    private String escapeIdentifier(final String identifier) {
+        if (StringUtils.isBlank(identifier))
+            return "";
+        if (target == Target.Postgresql)
+            return '"' + identifier + '"';
+        return '`' + identifier + '`';
+    }
+
     private String getSchemaPrefix() {
-        return StringUtils.isBlank(schemaName) ? "" : "`" + schemaName + "`.";
+        return StringUtils.isBlank(schemaName) ? "" : escapeIdentifier(schemaName) + '.';
     }
 
     public void write() throws IOException {
-        writeLine("SET FOREIGN_KEY_CHECKS = 0;");
+        if (target == Target.Postgresql) {
+            writeLine("SET session_replication_role = 'replica';");
+        } else {
+            writeLine("SET FOREIGN_KEY_CHECKS = 0;");
+        }
         writeSchema();
         writeData();
-        writeLine("SET FOREIGN_KEY_CHECKS = 1;");
+        if (target == Target.Postgresql) {
+            writeLine("SET session_replication_role = 'origin';");
+        } else {
+            writeLine("SET FOREIGN_KEY_CHECKS = 1;");
+        }
     }
 
     private void writeSchema() throws IOException {
         if (LOGGER.isInfoEnabled())
             LOGGER.info("Exporting schema...");
-        if (getSchemaPrefix().length() > 0) {
+        if (StringUtils.isNotBlank(schemaName)) {
             writeLine("-- -----------------------------------------------------");
             writeLine("-- Schema " + schemaName);
             writeLine("-- -----------------------------------------------------");
-            writeLine("CREATE SCHEMA IF NOT EXISTS `" + schemaName +
-                      "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-            writeLine("USE `" + schemaName + "`;");
+            if (target == Target.Postgresql) {
+                writeLine("DROP DATABASE IF EXISTS " + escapeIdentifier(schemaName) + ";");
+                writeLine("CREATE DATABASE " + escapeIdentifier(schemaName) +
+                          " WITH ENCODING 'UTF8' LC_COLLATE = 'en_US.UTF-8' LC_CTYPE = 'en_US.UTF-8';");
+            } else {
+                writeLine("CREATE SCHEMA IF NOT EXISTS " + escapeIdentifier(schemaName) +
+                          " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+            }
+            writeLine("USE " + escapeIdentifier(schemaName) + ";");
         }
         writer.newLine();
         writeNodeTables();
@@ -72,23 +100,23 @@ final class SQLDump {
         writeLine("-- Node tables");
         writeLine("-- -----------------------------------------------------");
         for (final String label : graph.getNodeLabels()) {
-            writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + "`" + label + "`;");
-            writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + "`" + label + "` (");
+            writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + escapeIdentifier(label) + ";");
+            writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + escapeIdentifier(label) + " (");
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
                 if ("__label".equals(entry.getKey()))
                     continue;
-                writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
-                          getSQLTypeAttributes(entry.getKey()) + ",");
+                writeLine("  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) +
+                          " " + getSQLTypeAttributes(entry.getKey()) + ",");
             }
             for (final IndexDescription index : graph.indexDescriptions())
                 if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
                     final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
                     final String indexName =
                             index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
-                    // TODO: writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
+                    // TODO: writeLine("  " + indexType + "INDEX " + escapeIdentifier(indexName) + " (" + escapeIdentifier(index.getProperty()) + " ASC),");
                 }
-            writeLine("  PRIMARY KEY (`__id`),");
-            writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC)");
+            writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
+            writeLine("  UNIQUE INDEX " + escapeIdentifier("__id_UNIQUE") + " (" + escapeIdentifier("__id") + " ASC)");
             writeLine(");");
             writer.newLine();
         }
@@ -150,7 +178,6 @@ final class SQLDump {
                     foreignKeyCounter++;
                 }
             }
-
         }
         writer.newLine();
     }
@@ -159,28 +186,30 @@ final class SQLDump {
                                 final Map<String, Type> propertyKeyTypes,
                                 final int foreignKeyCounter) throws IOException {
         final String tableName = getEdgeTableName(label, fromLabel, toLabel);
-        writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + "`" + tableName + "`;");
-        writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + "`" + tableName + "` (");
+        writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + escapeIdentifier(tableName) + ";");
+        writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + escapeIdentifier(tableName) + " (");
         for (final Map.Entry<String, Type> entry : propertyKeyTypes.entrySet()) {
             if ("__label".equals(entry.getKey()))
                 continue;
-            writeLine("  `" + entry.getKey() + "` " + getSQLType(entry.getKey(), entry.getValue()) + " " +
-                      getSQLTypeAttributes(entry.getKey()) + ",");
+            writeLine(
+                    "  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) + " " +
+                    getSQLTypeAttributes(entry.getKey()) + ",");
         }
         for (final IndexDescription index : graph.indexDescriptions())
             if (index.getTarget() == IndexDescription.Target.EDGE && index.getLabel().equals(label)) {
                 final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
                 final String indexName =
                         index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
-                // TODO: writeLine("  " + indexType + "INDEX `" + indexName + "` (`" + index.getProperty() + "` ASC),");
+                // TODO: writeLine("  " + indexType + "INDEX " + escapeIdentifier(indexName) + " (" + escapeIdentifier(index.getProperty()) + " ASC),");
             }
-        writeLine("  PRIMARY KEY (`__id`),");
-        writeLine("  UNIQUE INDEX `__id_UNIQUE` (`__id` ASC),");
-        writeLine("  FOREIGN KEY `fk" + foreignKeyCounter + "__from_id` (`__from_id`) REFERENCES " + getSchemaPrefix() +
-                  "`" + fromLabel + "`(`__id`),");
-        writeLine(
-                "  FOREIGN KEY `fk" + foreignKeyCounter + "__to_id` (`__to_id`) REFERENCES " + getSchemaPrefix() + "`" +
-                toLabel + "`(`__id`)");
+        writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
+        writeLine("  UNIQUE INDEX " + escapeIdentifier("__id_UNIQUE") + " (" + escapeIdentifier("__id") + " ASC),");
+        writeLine("  FOREIGN KEY " + escapeIdentifier("fk" + foreignKeyCounter + "__from_id") + " (" +
+                  escapeIdentifier("__from_id") + ") REFERENCES " + getSchemaPrefix() + escapeIdentifier(fromLabel) +
+                  "(" + escapeIdentifier("__id") + "),");
+        writeLine("  FOREIGN KEY " + escapeIdentifier("fk" + foreignKeyCounter + "__to_id") + " (" +
+                  escapeIdentifier("__to_id") + ") REFERENCES " + getSchemaPrefix() + escapeIdentifier(toLabel) + "(" +
+                  escapeIdentifier("__id") + ")");
         writeLine(");");
         writer.newLine();
     }
@@ -249,8 +278,9 @@ final class SQLDump {
         final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForNodeLabel(label);
         final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
                 String[]::new);
-        final String keysString = Arrays.stream(keys).collect(Collectors.joining("`, `", "`", "`"));
-        writeLine("INSERT INTO " + getSchemaPrefix() + "`" + label + "` (" + keysString + ") VALUES");
+        final String keysString = Arrays.stream(keys).map(this::escapeIdentifier).collect(
+                Collectors.joining(", ", "", ""));
+        writeLine("INSERT INTO " + getSchemaPrefix() + escapeIdentifier(label) + " (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Node node = batch.get(i);
             final String values = Arrays.stream(keys).map(
@@ -291,6 +321,9 @@ final class SQLDump {
     }
 
     private String escapeQuoting(final String value, final String quoteChar) {
+        if (target == Target.Postgresql) {
+            return StringUtils.replace(value, quoteChar, quoteChar + quoteChar);
+        }
         return StringUtils.replace(value, quoteChar, '\\' + quoteChar);
     }
 
@@ -335,8 +368,9 @@ final class SQLDump {
         final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
         final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
                 String[]::new);
-        final String keysString = Arrays.stream(keys).collect(Collectors.joining("`, `", "`", "`"));
-        writeLine("INSERT INTO " + getSchemaPrefix() + "`" + tableLabel + "` (" + keysString + ") VALUES");
+        final String keysString = Arrays.stream(keys).map(this::escapeIdentifier).collect(
+                Collectors.joining(", ", "", ""));
+        writeLine("INSERT INTO " + getSchemaPrefix() + escapeIdentifier(tableLabel) + " (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Edge edge = batch.get(i);
             final String values = Arrays.stream(keys).map(

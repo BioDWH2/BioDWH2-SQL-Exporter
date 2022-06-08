@@ -3,6 +3,7 @@ package de.unibi.agbi.biodwh2.sql.exporter;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.core.net.BioDWH2Updater;
 import de.unibi.agbi.biodwh2.sql.exporter.model.CmdArgs;
+import de.unibi.agbi.biodwh2.sql.exporter.model.Target;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Locale;
 
 public class SQLExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(SQLExporter.class);
@@ -49,9 +51,26 @@ public class SQLExporter {
         }
         //noinspection ResultOfMethodCallIgnored
         Paths.get(workspacePath, "sql").toFile().mkdir();
-        exportSQL(workspacePath, commandLine.insertBatchSize, commandLine.schemaName);
+        exportSQL(workspacePath, commandLine.insertBatchSize, commandLine.schemaName,
+                  parseTargetSafe(commandLine.target));
         storeWorkspaceHash(workspacePath);
         LOGGER.info("SQL database successfully created.");
+    }
+
+    private Target parseTargetSafe(final String target) {
+        switch (target.toLowerCase(Locale.ROOT)) {
+            case "mssql":
+                return Target.MSSQL;
+            case "sqlite":
+                return Target.Sqlite;
+            case "mariadb":
+                return Target.MariaDB;
+            case "postgresql":
+                return Target.Postgresql;
+            case "mysql":
+            default:
+                return Target.MySQL;
+        }
     }
 
     private boolean verifyWorkspaceExists(final String workspacePath) {
@@ -65,9 +84,10 @@ public class SQLExporter {
         return true;
     }
 
-    private void exportSQL(final String workspacePath, final Integer insertBatchSize, final String schemaName) {
+    private void exportSQL(final String workspacePath, final Integer insertBatchSize, final String schemaName,
+                           final Target target) {
         if (LOGGER.isInfoEnabled())
-            LOGGER.info("Creating sql database...");
+            LOGGER.info("Creating sql dump for target " + target + "...");
         Path databasePath = Paths.get(workspacePath, "sql", "dump.sql");
         try (final OutputStream stream = Files.newOutputStream(databasePath);
              final OutputStreamWriter streamWriter = new OutputStreamWriter(stream, StandardCharsets.UTF_8);
@@ -78,6 +98,8 @@ public class SQLExporter {
                 dump.setInsertBatchSize(insertBatchSize);
             if (schemaName != null)
                 dump.setSchemaName(schemaName);
+            if (target != null)
+                dump.setTarget(target);
             dump.write();
         } catch (Exception e) {
             if (LOGGER.isErrorEnabled())
