@@ -54,18 +54,28 @@ final class SQLDump {
     }
 
     public void write() throws IOException {
-        if (target == Target.Postgresql) {
-            writeLine("SET session_replication_role = 'replica';");
-        } else {
-            writeLine("SET FOREIGN_KEY_CHECKS = 0;");
-        }
+        writeDisableForeignKeys();
         writeSchema();
         writeData();
-        if (target == Target.Postgresql) {
+        writeEnableForeignKeys();
+    }
+
+    private void writeDisableForeignKeys() throws IOException {
+        if (target == Target.Postgresql)
+            writeLine("SET session_replication_role = 'replica';");
+        else if (target == Target.Sqlite)
+            writeLine("PRAGMA foreign_keys = 0;");
+        else
+            writeLine("SET FOREIGN_KEY_CHECKS = 0;");
+    }
+
+    private void writeEnableForeignKeys() throws IOException {
+        if (target == Target.Postgresql)
             writeLine("SET session_replication_role = 'origin';");
-        } else {
+        else if (target == Target.Sqlite)
+            writeLine("PRAGMA foreign_keys = 1;");
+        else
             writeLine("SET FOREIGN_KEY_CHECKS = 1;");
-        }
     }
 
     private void writeSchema() throws IOException {
@@ -79,11 +89,14 @@ final class SQLDump {
                 writeLine("DROP DATABASE IF EXISTS " + escapeIdentifier(schemaName) + ";");
                 writeLine("CREATE DATABASE " + escapeIdentifier(schemaName) +
                           " WITH ENCODING 'UTF8' LC_COLLATE = 'en_US.UTF-8' LC_CTYPE = 'en_US.UTF-8';");
+            } else if (target == Target.Sqlite) {
+                writeLine("PRAGMA encoding = 'UTF-8';");
             } else {
                 writeLine("CREATE SCHEMA IF NOT EXISTS " + escapeIdentifier(schemaName) +
                           " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
             }
-            writeLine("USE " + escapeIdentifier(schemaName) + ";");
+            if (target != Target.Sqlite)
+                writeLine("USE " + escapeIdentifier(schemaName) + ";");
         }
         writer.newLine();
         writeNodeTables();
@@ -99,27 +112,40 @@ final class SQLDump {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Node tables");
         writeLine("-- -----------------------------------------------------");
+        int nodeTableIndex = 1;
         for (final String label : graph.getNodeLabels()) {
-            writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + escapeIdentifier(label) + ";");
-            writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + escapeIdentifier(label) + " (");
+            final String labelFQDN = getFQDN(label);
+            writeLine("DROP TABLE IF EXISTS " + labelFQDN + ";");
+            writeLine("CREATE TABLE IF NOT EXISTS " + labelFQDN + " (");
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
                 if ("__label".equals(entry.getKey()))
                     continue;
                 writeLine("  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) +
                           " " + getSQLTypeAttributes(entry.getKey()) + ",");
             }
+            writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + ")");
+            writeLine(");");
             for (final IndexDescription index : graph.indexDescriptions())
                 if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
                     final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
-                    final String indexName =
-                            index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
-                    // TODO: writeLine("  " + indexType + "INDEX " + escapeIdentifier(indexName) + " (" + escapeIdentifier(index.getProperty()) + " ASC),");
+                    final String indexName = "index_n" + nodeTableIndex +
+                                             (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
+                    nodeTableIndex++;
+                    writeLine(
+                            "CREATE " + indexType + "INDEX " + escapeIdentifier(indexName) + " ON " + labelFQDN + "(" +
+                            escapeIdentifier(index.getProperty()) + " ASC);");
                 }
-            writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
-            writeLine("  UNIQUE INDEX " + escapeIdentifier("__id_UNIQUE") + " (" + escapeIdentifier("__id") + " ASC)");
-            writeLine(");");
+            writeLine("CREATE UNIQUE INDEX " + escapeIdentifier("index_n" + nodeTableIndex + "_UNIQUE") + " ON " +
+                      labelFQDN + "(" + escapeIdentifier("__id") + " ASC);");
+            nodeTableIndex++;
             writer.newLine();
         }
+    }
+
+    private String getFQDN(final String identifier) {
+        if (target == Target.Sqlite)
+            return escapeIdentifier(identifier);
+        return getSchemaPrefix() + escapeIdentifier(identifier);
     }
 
     /**
@@ -163,7 +189,7 @@ final class SQLDump {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Edge tables");
         writeLine("-- -----------------------------------------------------");
-        int foreignKeyCounter = 1;
+        int edgeTableIndexCounter = 1;
         for (final String label : graph.getEdgeLabels()) {
             final Map<String, Set<String>> fromToLabelsMap = new HashMap<>();
             for (final Edge edge : graph.getEdges(label)) {
@@ -174,20 +200,20 @@ final class SQLDump {
             final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
             for (final String fromLabel : fromToLabelsMap.keySet()) {
                 for (final String toLabel : fromToLabelsMap.get(fromLabel)) {
-                    writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes, foreignKeyCounter);
-                    foreignKeyCounter++;
+                    edgeTableIndexCounter = writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes,
+                                                           edgeTableIndexCounter);
                 }
             }
         }
         writer.newLine();
     }
 
-    private void writeEdgeTable(final String label, final String fromLabel, final String toLabel,
-                                final Map<String, Type> propertyKeyTypes,
-                                final int foreignKeyCounter) throws IOException {
+    private int writeEdgeTable(final String label, final String fromLabel, final String toLabel,
+                               final Map<String, Type> propertyKeyTypes, int edgeTableIndexCounter) throws IOException {
         final String tableName = getEdgeTableName(label, fromLabel, toLabel);
-        writeLine("DROP TABLE IF EXISTS " + getSchemaPrefix() + escapeIdentifier(tableName) + ";");
-        writeLine("CREATE TABLE IF NOT EXISTS " + getSchemaPrefix() + escapeIdentifier(tableName) + " (");
+        final String tableNameFQDN = getFQDN(tableName);
+        writeLine("DROP TABLE IF EXISTS " + tableNameFQDN + ";");
+        writeLine("CREATE TABLE IF NOT EXISTS " + tableNameFQDN + " (");
         for (final Map.Entry<String, Type> entry : propertyKeyTypes.entrySet()) {
             if ("__label".equals(entry.getKey()))
                 continue;
@@ -195,23 +221,27 @@ final class SQLDump {
                     "  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) + " " +
                     getSQLTypeAttributes(entry.getKey()) + ",");
         }
+        writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
+        writeLine("  FOREIGN KEY (" + escapeIdentifier("__from_id") + ") REFERENCES " + getFQDN(fromLabel) + "(" +
+                  escapeIdentifier("__id") + "),");
+        writeLine("  FOREIGN KEY (" + escapeIdentifier("__to_id") + ") REFERENCES " + getFQDN(toLabel) + "(" +
+                  escapeIdentifier("__id") + ")");
+        writeLine(");");
         for (final IndexDescription index : graph.indexDescriptions())
             if (index.getTarget() == IndexDescription.Target.EDGE && index.getLabel().equals(label)) {
                 final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
-                final String indexName =
-                        index.getProperty() + (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
-                // TODO: writeLine("  " + indexType + "INDEX " + escapeIdentifier(indexName) + " (" + escapeIdentifier(index.getProperty()) + " ASC),");
+                final String indexName = "index_e" + edgeTableIndexCounter +
+                                         (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
+                edgeTableIndexCounter++;
+                writeLine(
+                        "CREATE " + indexType + "INDEX " + escapeIdentifier(indexName) + " ON " + tableNameFQDN + "(" +
+                        escapeIdentifier(index.getProperty()) + " ASC);");
             }
-        writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
-        writeLine("  UNIQUE INDEX " + escapeIdentifier("__id_UNIQUE") + " (" + escapeIdentifier("__id") + " ASC),");
-        writeLine("  FOREIGN KEY " + escapeIdentifier("fk" + foreignKeyCounter + "__from_id") + " (" +
-                  escapeIdentifier("__from_id") + ") REFERENCES " + getSchemaPrefix() + escapeIdentifier(fromLabel) +
-                  "(" + escapeIdentifier("__id") + "),");
-        writeLine("  FOREIGN KEY " + escapeIdentifier("fk" + foreignKeyCounter + "__to_id") + " (" +
-                  escapeIdentifier("__to_id") + ") REFERENCES " + getSchemaPrefix() + escapeIdentifier(toLabel) + "(" +
-                  escapeIdentifier("__id") + ")");
-        writeLine(");");
+        writeLine("CREATE UNIQUE INDEX " + escapeIdentifier("index_e" + edgeTableIndexCounter + "_UNIQUE") + " ON " +
+                  tableNameFQDN + "(" + escapeIdentifier("__id") + " ASC);");
+        edgeTableIndexCounter++;
         writer.newLine();
+        return edgeTableIndexCounter;
     }
 
     private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
@@ -280,7 +310,7 @@ final class SQLDump {
                 String[]::new);
         final String keysString = Arrays.stream(keys).map(this::escapeIdentifier).collect(
                 Collectors.joining(", ", "", ""));
-        writeLine("INSERT INTO " + getSchemaPrefix() + escapeIdentifier(label) + " (" + keysString + ") VALUES");
+        writeLine("INSERT INTO " + getFQDN(label) + " (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Node node = batch.get(i);
             final String values = Arrays.stream(keys).map(
@@ -321,7 +351,7 @@ final class SQLDump {
     }
 
     private String escapeQuoting(final String value, final String quoteChar) {
-        if (target == Target.Postgresql) {
+        if (target == Target.Postgresql || target == Target.Sqlite) {
             return StringUtils.replace(value, quoteChar, quoteChar + quoteChar);
         }
         return StringUtils.replace(value, quoteChar, '\\' + quoteChar);
@@ -370,7 +400,7 @@ final class SQLDump {
                 String[]::new);
         final String keysString = Arrays.stream(keys).map(this::escapeIdentifier).collect(
                 Collectors.joining(", ", "", ""));
-        writeLine("INSERT INTO " + getSchemaPrefix() + escapeIdentifier(tableLabel) + " (" + keysString + ") VALUES");
+        writeLine("INSERT INTO " + getFQDN(tableLabel) + " (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Edge edge = batch.get(i);
             final String values = Arrays.stream(keys).map(
