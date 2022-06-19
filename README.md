@@ -44,13 +44,13 @@ Depending on the selected SQL target DBMS, certain limitations need to be adhere
   graph node and edge properties, these arrays need to be represented somehow. Some DBMS added support for JSON data
   types which are suitable for representing arrays.
 
-|       DBMS |                                                                        Identifier length | Array properties                       |
-|-----------:|-----------------------------------------------------------------------------------------:|----------------------------------------|
-|      MySQL |               64 [(ref)](https://dev.mysql.com/doc/refman/8.0/en/identifier-length.html) | YES (JSON data type)                   |
-|    MariaDB |                   64 [(ref)](https://mariadb.com/kb/en/identifier-names/#maximum-length) | ~ (Stored as text with JSON functions) |
-| PostgreSQL |                          63 [(ref)](https://www.postgresql.org/docs/current/limits.html) | YES (JSON data type)                   |
-|     Sqlite |                                            - [(ref)](https://www.sqlite.org/limits.html) | YES (JSON data type)                   |
-|      MSSQL | 128 [(ref)](https://www.c-sharpcorner.com/blogs/maximum-length-of-objects-in-sql-server) | ~ (Stored as text with JSON functions) |
+|       DBMS |                                                                        Identifier length | Array properties                       | Indices          |
+|-----------:|-----------------------------------------------------------------------------------------:|----------------------------------------|------------------|
+|      MySQL |               64 [(ref)](https://dev.mysql.com/doc/refman/8.0/en/identifier-length.html) | YES (JSON data type)                   | No array indices |
+|    MariaDB |                   64 [(ref)](https://mariadb.com/kb/en/identifier-names/#maximum-length) | ~ (Stored as text with JSON functions) |                  |
+| PostgreSQL |                          63 [(ref)](https://www.postgresql.org/docs/current/limits.html) | YES (JSON data type)                   |                  |
+|     Sqlite |                                            - [(ref)](https://www.sqlite.org/limits.html) | YES (JSON data type)                   | -                |
+|      MSSQL | 128 [(ref)](https://www.c-sharpcorner.com/blogs/maximum-length-of-objects-in-sql-server) | ~ (Stored as text with JSON functions) |                  |
 
 ## Help
 

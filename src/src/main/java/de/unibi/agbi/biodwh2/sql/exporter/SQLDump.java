@@ -93,7 +93,7 @@ final class SQLDump {
                 writeLine("PRAGMA encoding = 'UTF-8';");
             } else {
                 writeLine("CREATE SCHEMA IF NOT EXISTS " + escapeIdentifier(schemaName) +
-                          " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+                          " DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;");
             }
             if (target != Target.Sqlite)
                 writeLine("USE " + escapeIdentifier(schemaName) + ";");
@@ -120,13 +120,18 @@ final class SQLDump {
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
                 if ("__label".equals(entry.getKey()))
                     continue;
-                writeLine("  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) +
-                          " " + getSQLTypeAttributes(entry.getKey()) + ",");
+                final boolean isIndexed = isIndexedProperty(label, IndexDescription.Target.NODE, entry.getKey());
+                final String sqlDataType = getSQLType(entry.getKey(), entry.getValue(), isIndexed);
+                writeLine("  " + escapeIdentifier(entry.getKey()) + " " + sqlDataType + " " +
+                          getSQLTypeAttributes(entry.getKey()) + ",");
             }
             writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + ")");
             writeLine(");");
             for (final IndexDescription index : graph.indexDescriptions())
                 if (index.getTarget() == IndexDescription.Target.NODE && index.getLabel().equals(label)) {
+                    // MySQL does not support JSON array indices, so they are skipped
+                    if (index.isArrayProperty() && target == Target.MySQL)
+                        continue;
                     final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
                     final String indexName = "index_n" + nodeTableIndex +
                                              (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
@@ -142,6 +147,15 @@ final class SQLDump {
         }
     }
 
+    private boolean isIndexedProperty(final String label, final IndexDescription.Target target,
+                                      final String propertyKey) {
+        for (final IndexDescription index : graph.indexDescriptions())
+            if (index.getTarget() == target && index.getLabel().equals(label) && index.getProperty().equals(
+                    propertyKey))
+                return true;
+        return false;
+    }
+
     private String getFQDN(final String identifier) {
         if (target == Target.Sqlite)
             return escapeIdentifier(identifier);
@@ -151,7 +165,7 @@ final class SQLDump {
     /**
      * https://dev.mysql.com/doc/refman/8.0/en/data-types.html
      */
-    private String getSQLType(final String key, final Type type) {
+    private String getSQLType(final String key, final Type type, final boolean isIndexed) {
         if (type.isList()) {
             return "JSON";
         } else {
@@ -160,7 +174,7 @@ final class SQLDump {
             if ("__label".equals(key))
                 return "VARCHAR(128)";
             if (CharSequence.class.isAssignableFrom(type.getType()))
-                return "MEDIUMTEXT";
+                return isIndexed ? "VARCHAR(1024)" : "MEDIUMTEXT";
             if (type.getType() == Integer.class)
                 return "INT";
             if (type.getType() == Long.class)
@@ -217,9 +231,10 @@ final class SQLDump {
         for (final Map.Entry<String, Type> entry : propertyKeyTypes.entrySet()) {
             if ("__label".equals(entry.getKey()))
                 continue;
-            writeLine(
-                    "  " + escapeIdentifier(entry.getKey()) + " " + getSQLType(entry.getKey(), entry.getValue()) + " " +
-                    getSQLTypeAttributes(entry.getKey()) + ",");
+            final boolean isIndexed = isIndexedProperty(label, IndexDescription.Target.EDGE, entry.getKey());
+            final String sqlDataType = getSQLType(entry.getKey(), entry.getValue(), isIndexed);
+            writeLine("  " + escapeIdentifier(entry.getKey()) + " " + sqlDataType + " " +
+                      getSQLTypeAttributes(entry.getKey()) + ",");
         }
         writeLine("  PRIMARY KEY (" + escapeIdentifier("__id") + "),");
         writeLine("  FOREIGN KEY (" + escapeIdentifier("__from_id") + ") REFERENCES " + getFQDN(fromLabel) + "(" +
@@ -229,6 +244,9 @@ final class SQLDump {
         writeLine(");");
         for (final IndexDescription index : graph.indexDescriptions())
             if (index.getTarget() == IndexDescription.Target.EDGE && index.getLabel().equals(label)) {
+                // MySQL does not support JSON array indices, so they are skipped
+                if (index.isArrayProperty() && target == Target.MySQL)
+                    continue;
                 final String indexType = index.getType() == IndexDescription.Type.UNIQUE ? "UNIQUE " : "";
                 final String indexName = "index_e" + edgeTableIndexCounter +
                                          (index.getType() == IndexDescription.Type.UNIQUE ? "_UNIQUE" : "");
