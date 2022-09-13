@@ -22,7 +22,7 @@ final class SQLDump {
     private String schemaName = "biodwh2";
     private final BufferedWriter writer;
     private final Graph graph;
-    private Target target = Target.MySQL;
+    private Target target = Target.DEFAULT;
 
     public SQLDump(final BufferedWriter writer, final Graph graph) {
         this.writer = writer;
@@ -53,10 +53,10 @@ final class SQLDump {
         return StringUtils.isBlank(schemaName) ? "" : escapeIdentifier(schemaName) + '.';
     }
 
-    public void write() throws IOException {
+    public void write(final TableNameProvider tableNameProvider) throws IOException {
         writeDisableForeignKeys();
-        writeSchema();
-        writeData();
+        writeSchema(tableNameProvider);
+        writeData(tableNameProvider);
         writeEnableForeignKeys();
     }
 
@@ -78,7 +78,7 @@ final class SQLDump {
             writeLine("SET FOREIGN_KEY_CHECKS = 1;");
     }
 
-    private void writeSchema() throws IOException {
+    private void writeSchema(final TableNameProvider tableNameProvider) throws IOException {
         if (LOGGER.isInfoEnabled())
             LOGGER.info("Exporting schema...");
         if (StringUtils.isNotBlank(schemaName)) {
@@ -99,8 +99,8 @@ final class SQLDump {
                 writeLine("USE " + escapeIdentifier(schemaName) + ";");
         }
         writer.newLine();
-        writeNodeTables();
-        writeEdgeTables();
+        writeNodeTables(tableNameProvider);
+        writeEdgeTables(tableNameProvider);
     }
 
     private void writeLine(final String line) throws IOException {
@@ -108,13 +108,14 @@ final class SQLDump {
         writer.newLine();
     }
 
-    private void writeNodeTables() throws IOException {
+    private void writeNodeTables(final TableNameProvider tableNameProvider) throws IOException {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Node tables");
         writeLine("-- -----------------------------------------------------");
         int nodeTableIndex = 1;
         for (final String label : graph.getNodeLabels()) {
-            final String labelFQDN = getFQDN(label);
+            final String tableLabel = tableNameProvider.getNodeTableName(label);
+            final String labelFQDN = getFQDN(tableLabel);
             writeLine("DROP TABLE IF EXISTS " + labelFQDN + ";");
             writeLine("CREATE TABLE IF NOT EXISTS " + labelFQDN + " (");
             for (final Map.Entry<String, Type> entry : graph.getPropertyKeyTypesForNodeLabel(label).entrySet()) {
@@ -199,32 +200,28 @@ final class SQLDump {
         return "NULL";
     }
 
-    private void writeEdgeTables() throws IOException {
+    private void writeEdgeTables(final TableNameProvider tableNameProvider) throws IOException {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Edge tables");
         writeLine("-- -----------------------------------------------------");
         int edgeTableIndexCounter = 1;
         for (final String label : graph.getEdgeLabels()) {
-            final Map<String, Set<String>> fromToLabelsMap = new HashMap<>();
-            for (final Edge edge : graph.getEdges(label)) {
-                final String fromLabel = graph.getNode(edge.getFromId()).getLabel();
-                final String toLabel = graph.getNode(edge.getToId()).getLabel();
-                fromToLabelsMap.computeIfAbsent(fromLabel, k -> new HashSet<>()).add(toLabel);
-            }
             final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
+            final Map<String, Set<String>> fromToLabelsMap = tableNameProvider.getEdgeLabelNodeLabelsMap(label);
             for (final String fromLabel : fromToLabelsMap.keySet()) {
                 for (final String toLabel : fromToLabelsMap.get(fromLabel)) {
-                    edgeTableIndexCounter = writeEdgeTable(label, fromLabel, toLabel, propertyKeyTypes,
-                                                           edgeTableIndexCounter);
+                    edgeTableIndexCounter = writeEdgeTable(tableNameProvider, label, fromLabel, toLabel,
+                                                           propertyKeyTypes, edgeTableIndexCounter);
                 }
             }
         }
         writer.newLine();
     }
 
-    private int writeEdgeTable(final String label, final String fromLabel, final String toLabel,
-                               final Map<String, Type> propertyKeyTypes, int edgeTableIndexCounter) throws IOException {
-        final String tableName = getEdgeTableName(label, fromLabel, toLabel);
+    private int writeEdgeTable(final TableNameProvider tableNameProvider, final String label, final String fromLabel,
+                               final String toLabel, final Map<String, Type> propertyKeyTypes,
+                               int edgeTableIndexCounter) throws IOException {
+        final String tableName = tableNameProvider.getEdgeTableName(label, fromLabel, toLabel);
         final String tableNameFQDN = getFQDN(tableName);
         writeLine("DROP TABLE IF EXISTS " + tableNameFQDN + ";");
         writeLine("CREATE TABLE IF NOT EXISTS " + tableNameFQDN + " (");
@@ -262,39 +259,14 @@ final class SQLDump {
         return edgeTableIndexCounter;
     }
 
-    private String getEdgeTableName(final String label, final String fromLabel, final String toLabel) {
-        final String tableName = fromLabel + "__" + label + "__" + toLabel;
-        if (tableName.length() <= 52)
-            return tableName;
-        final StringBuilder builder = new StringBuilder();
-        final String[] fromLabelParts = StringUtils.split(fromLabel, "_", 2);
-        if (fromLabelParts.length == 2) {
-            for (final char c : fromLabelParts[0].toCharArray())
-                if (!Character.isLowerCase(c))
-                    builder.append(c);
-            builder.append('_').append(fromLabelParts[1]);
-        } else
-            builder.append(fromLabel);
-        builder.append("__").append(label).append("__");
-        final String[] toLabelParts = StringUtils.split(toLabel, "_", 2);
-        if (toLabelParts.length == 2) {
-            for (final char c : toLabelParts[0].toCharArray())
-                if (!Character.isLowerCase(c))
-                    builder.append(c);
-            builder.append('_').append(toLabelParts[1]);
-        } else
-            builder.append(toLabel);
-        return builder.toString();
-    }
-
-    private void writeData() throws IOException {
+    private void writeData(final TableNameProvider tableNameProvider) throws IOException {
         if (LOGGER.isInfoEnabled())
             LOGGER.info("Exporting data...");
-        writeNodeData();
-        writeEdgeData();
+        writeNodeData(tableNameProvider);
+        writeEdgeData(tableNameProvider);
     }
 
-    private void writeNodeData() throws IOException {
+    private void writeNodeData(final TableNameProvider tableNameProvider) throws IOException {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Node data");
         writeLine("-- -----------------------------------------------------");
@@ -310,25 +282,26 @@ final class SQLDump {
             for (final Node node : graph.getNodes(label)) {
                 batch.add(node);
                 if (batch.size() == insertBatchSize) {
-                    writeInsertBatch(label, batch);
+                    writeNodeInsertBatch(label, tableNameProvider.getNodeTableName(label), batch);
                     batch.clear();
                 }
             }
             if (batch.size() > 0) {
-                writeInsertBatch(label, batch);
+                writeNodeInsertBatch(label, tableNameProvider.getNodeTableName(label), batch);
                 batch.clear();
             }
             writer.newLine();
         }
     }
 
-    private void writeInsertBatch(final String label, final List<Node> batch) throws IOException {
+    private void writeNodeInsertBatch(final String label, final String tableLabel,
+                                      final List<Node> batch) throws IOException {
         final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForNodeLabel(label);
         final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
                 String[]::new);
         final String keysString = Arrays.stream(keys).map(this::escapeIdentifier).collect(
                 Collectors.joining(", ", "", ""));
-        writeLine("INSERT INTO " + getFQDN(label) + " (" + keysString + ") VALUES");
+        writeLine("INSERT INTO " + getFQDN(tableLabel) + " (" + keysString + ") VALUES");
         for (int i = 0; i < batch.size(); i++) {
             final Node node = batch.get(i);
             final String values = Arrays.stream(keys).map(
@@ -375,7 +348,7 @@ final class SQLDump {
         return StringUtils.replace(value, quoteChar, '\\' + quoteChar);
     }
 
-    private void writeEdgeData() throws IOException {
+    private void writeEdgeData(final TableNameProvider tableNameProvider) throws IOException {
         writeLine("-- -----------------------------------------------------");
         writeLine("-- Edge data");
         writeLine("-- -----------------------------------------------------");
@@ -395,7 +368,7 @@ final class SQLDump {
                 final List<Edge> batch = batches.computeIfAbsent(labelKey, k -> new ArrayList<>());
                 batch.add(edge);
                 if (batch.size() == insertBatchSize) {
-                    writeInsertBatch(label, getEdgeTableName(label, fromLabel, toLabel), batch);
+                    writeEdgeInsertBatch(label, tableNameProvider.getEdgeTableName(label, fromLabel, toLabel), batch);
                     batch.clear();
                 }
             }
@@ -403,7 +376,8 @@ final class SQLDump {
                 final List<Edge> batch = batches.get(labelKey);
                 if (batch.size() > 0) {
                     final String[] labelParts = StringUtils.split(labelKey, "|", 2);
-                    writeInsertBatch(label, getEdgeTableName(label, labelParts[0], labelParts[1]), batch);
+                    writeEdgeInsertBatch(label, tableNameProvider.getEdgeTableName(label, labelParts[0], labelParts[1]),
+                                         batch);
                     batch.clear();
                 }
             }
@@ -411,8 +385,8 @@ final class SQLDump {
         }
     }
 
-    private void writeInsertBatch(final String label, final String tableLabel,
-                                  final List<Edge> batch) throws IOException {
+    private void writeEdgeInsertBatch(final String label, final String tableLabel,
+                                      final List<Edge> batch) throws IOException {
         final Map<String, Type> propertyKeyTypes = graph.getPropertyKeyTypesForEdgeLabel(label);
         final String[] keys = propertyKeyTypes.keySet().stream().filter(k -> !"__label".equals(k)).toArray(
                 String[]::new);

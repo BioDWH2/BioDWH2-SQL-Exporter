@@ -1,8 +1,12 @@
 package de.unibi.agbi.biodwh2.sql.exporter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import de.unibi.agbi.biodwh2.core.exceptions.WorkspaceException;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.core.net.BioDWH2Updater;
 import de.unibi.agbi.biodwh2.sql.exporter.model.CmdArgs;
+import de.unibi.agbi.biodwh2.sql.exporter.model.Configuration;
 import de.unibi.agbi.biodwh2.sql.exporter.model.Target;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -18,6 +22,7 @@ import java.util.Locale;
 
 public class SQLExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(SQLExporter.class);
+    private static final String CONFIG_FILE_NAME = "sql_config.json";
 
     private SQLExporter() {
     }
@@ -58,6 +63,8 @@ public class SQLExporter {
     }
 
     private Target parseTargetSafe(final String target) {
+        if (target == null)
+            return Target.DEFAULT;
         switch (target.toLowerCase(Locale.ROOT)) {
             case "mssql":
                 return Target.MSSQL;
@@ -93,18 +100,51 @@ public class SQLExporter {
              final OutputStreamWriter streamWriter = new OutputStreamWriter(stream, StandardCharsets.UTF_8);
              final BufferedWriter writer = new BufferedWriter(streamWriter); final Graph graph = new Graph(
                 Paths.get(workspacePath, "sources/mapped.db"), true, true)) {
+            final Configuration configuration = createOrLoadConfiguration(workspacePath);
+            final TableNameProvider tableNameProvider = new TableNameProvider(configuration, target, graph);
+            saveConfiguration(workspacePath, configuration);
             final SQLDump dump = new SQLDump(writer, graph);
             if (insertBatchSize != null)
                 dump.setInsertBatchSize(insertBatchSize);
             if (schemaName != null)
                 dump.setSchemaName(schemaName);
-            if (target != null)
-                dump.setTarget(target);
-            dump.write();
+            dump.setTarget(target);
+            dump.write(tableNameProvider);
         } catch (Exception e) {
             if (LOGGER.isErrorEnabled())
                 LOGGER.error("Failed to create sql database '" + databasePath + "'", e);
         }
+    }
+
+    private Configuration createOrLoadConfiguration(final String workspacePath) {
+        try {
+            final Configuration configuration = loadConfiguration(workspacePath);
+            return configuration == null ? createConfiguration(workspacePath) : configuration;
+        } catch (IOException e) {
+            throw new WorkspaceException("Failed to load or create workspace SQL configuration", e);
+        }
+    }
+
+    private Configuration loadConfiguration(final String workspacePath) throws IOException {
+        final ObjectMapper objectMapper = new ObjectMapper();
+        final Path path = getConfigurationFilePath(workspacePath);
+        return Files.exists(path) ? objectMapper.readValue(path.toFile(), Configuration.class) : null;
+    }
+
+    private Path getConfigurationFilePath(final String workspacePath) {
+        return Paths.get(workspacePath, "sql", CONFIG_FILE_NAME);
+    }
+
+    private Configuration createConfiguration(final String workspacePath) throws IOException {
+        final Configuration configuration = new Configuration();
+        saveConfiguration(workspacePath, configuration);
+        return configuration;
+    }
+
+    private void saveConfiguration(final String workspacePath, final Configuration configuration) throws IOException {
+        final ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        objectMapper.writeValue(getConfigurationFilePath(workspacePath).toFile(), configuration);
     }
 
     private void storeWorkspaceHash(final String workspacePath) {

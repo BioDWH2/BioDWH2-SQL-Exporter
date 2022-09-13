@@ -5,5 +5,7 @@ public enum Target {
     Sqlite,
     MSSQL,
     Postgresql,
-    MariaDB
+    MariaDB;
+
+    public static Target DEFAULT = Target.MySQL;
 }
