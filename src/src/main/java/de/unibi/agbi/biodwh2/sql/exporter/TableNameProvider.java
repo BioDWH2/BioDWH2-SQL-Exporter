@@ -4,8 +4,8 @@ import de.unibi.agbi.biodwh2.core.model.graph.Edge;
 import de.unibi.agbi.biodwh2.core.model.graph.Graph;
 import de.unibi.agbi.biodwh2.sql.exporter.model.Configuration;
 import de.unibi.agbi.biodwh2.sql.exporter.model.Target;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class TableNameProvider {
-    private static final Logger LOGGER = LoggerFactory.getLogger(TableNameProvider.class);
+    private static final Logger LOGGER = LogManager.getLogger(TableNameProvider.class);
 
     private final Target target;
     private final Configuration configuration;

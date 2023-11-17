@@ -9,8 +9,8 @@ import de.unibi.agbi.biodwh2.sql.exporter.model.CmdArgs;
 import de.unibi.agbi.biodwh2.sql.exporter.model.Configuration;
 import de.unibi.agbi.biodwh2.sql.exporter.model.Target;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import picocli.CommandLine;
 
 import java.io.*;
@@ -21,7 +21,7 @@ import java.nio.file.Paths;
 import java.util.Locale;
 
 public class SQLExporter {
-    private static final Logger LOGGER = LoggerFactory.getLogger(SQLExporter.class);
+    private static final Logger LOGGER = LogManager.getLogger(SQLExporter.class);
     private static final String CONFIG_FILE_NAME = "sql_config.json";
 
     private SQLExporter() {
