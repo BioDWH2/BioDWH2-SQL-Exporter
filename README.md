@@ -2,9 +2,6 @@
 
 # BioDWH2-SQL-Exporter
 
-| :warning: The SQL-Exporter is still experimental! For a stable solution, please try the [BioDWH2-Neo4j-Server](https://github.com/BioDWH2/BioDWH2-Neo4j-Server) or directly use the mapped GraphML file. |
-| --- |
-
 **BioDWH2** is an easy-to-use, automated, graph-based data warehouse and mapping tool for bioinformatics and medical
 informatics. The main repository can be found [here](https://github.com/BioDWH2/BioDWH2).
 
@@ -18,8 +15,8 @@ downloaded [here](https://github.com/BioDWH2/BioDWH2-SQL-Exporter/releases/lates
 
 ## Usage
 
-BioDWH2-SQL-Exporter requires the Java Runtime Environment version 8. The JRE 8 is
-available [here](https://www.oracle.com/java/technologies/javase-jre8-downloads.html).
+BioDWH2-SQL-Exporter requires the Java Runtime Environment version 11 or higher. The JRE 11 is
+available [here](https://adoptium.net/temurin/releases/?package=jre&version=11).
 
 Creating an SQL database from any workspace is done using the following command. Every time the workspace is updated or
 changed, the create command has to be executed again.
