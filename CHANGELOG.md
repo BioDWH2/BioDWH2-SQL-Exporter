@@ -1,9 +1,10 @@
 # Changelog
 
-## 📦 Version [v1.0.1](https://github.com/BioDWH2/BioDWH2-SQL-Exporter/releases/tag/v1.0.1)
+## 📦 Version [v1.0.2](https://github.com/BioDWH2/BioDWH2-SQL-Exporter/releases/tag/v1.0.2)
 
 Released: 25.06.2024
 
+* ```[feature]``` Switch to Java 11
 * ```[chore]``` Update dependencies
 
 ## 📦 Version [v1.0.0](https://github.com/BioDWH2/BioDWH2-SQL-Exporter/releases/tag/v1.0.0)

@@ -6,7 +6,7 @@
 
     <groupId>de.unibi.agbi.biodwh2</groupId>
     <artifactId>biodwh2-sql-exporter</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 
     <build>
         <finalName>BioDWH2-SQL-Exporter-v${project.version}</finalName>
