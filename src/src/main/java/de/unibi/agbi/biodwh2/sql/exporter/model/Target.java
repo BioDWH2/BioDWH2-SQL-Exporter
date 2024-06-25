@@ -7,5 +7,5 @@ public enum Target {
     Postgresql,
     MariaDB;
 
-    public static Target DEFAULT = Target.MySQL;
+    public static final Target DEFAULT = Target.MySQL;
 }

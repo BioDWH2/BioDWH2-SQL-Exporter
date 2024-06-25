@@ -49,13 +49,12 @@ public class TableNameProvider {
         if (name.length() > limit) {
             final String alias = configuration.tableNameAlias.get(name);
             if (alias == null) {
-                LOGGER.warn("No alias provided for table name '" + name + "' exceeding identifier limit of " + limit +
-                            " for target " + target);
+                LOGGER.warn("No alias provided for table name '{}' exceeding identifier limit of {} for target {}",
+                            name, limit, target);
                 configuration.tableNameAlias.put(name, name);
             } else if (alias.length() > limit) {
-                LOGGER.warn(
-                        "Provided alias '" + alias + "' for table name '" + name + "' exceeds identifier limit of " +
-                        limit + " for target " + target);
+                LOGGER.warn("Provided alias '{}' for table name '{}' exceeds identifier limit of {} for target {}",
+                            alias, name, limit, target);
             }
         }
     }

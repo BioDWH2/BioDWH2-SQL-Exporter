@@ -190,7 +190,7 @@ final class SQLDump {
                 return "TINYINT";
         }
         if (LOGGER.isWarnEnabled())
-            LOGGER.warn("Failed to retrieve SQL type for key '" + key + "' and type '" + type.getType());
+            LOGGER.warn("Failed to retrieve SQL type for key '{}' and type '{}", key, type.getType());
         return "";
     }
 
@@ -273,7 +273,7 @@ final class SQLDump {
         writer.newLine();
         for (final String label : graph.getNodeLabels()) {
             if (LOGGER.isInfoEnabled())
-                LOGGER.info("Exporting nodes with label " + label + "...");
+                LOGGER.info("Exporting nodes with label {}...", label);
             writeLine("-- -----------------------------------------------------");
             writeLine("-- Node data for label " + label);
             writeLine("-- -----------------------------------------------------");
@@ -286,7 +286,7 @@ final class SQLDump {
                     batch.clear();
                 }
             }
-            if (batch.size() > 0) {
+            if (!batch.isEmpty()) {
                 writeNodeInsertBatch(label, tableNameProvider.getNodeTableName(label), batch);
                 batch.clear();
             }
@@ -327,7 +327,7 @@ final class SQLDump {
                 return "'[" + escapeQuoting(values, "'") + "]'";
             }
             if (LOGGER.isWarnEnabled())
-                LOGGER.warn("Failed to format list property for key '" + key + "' and type '" + type.getType());
+                LOGGER.warn("Failed to format list property for key '{}' and type '{}", key, type.getType());
             return "";
         }
         return formatProperty(type.getType(), value, "'");
@@ -355,7 +355,7 @@ final class SQLDump {
         writer.newLine();
         for (final String label : graph.getEdgeLabels()) {
             if (LOGGER.isInfoEnabled())
-                LOGGER.info("Exporting edges with label " + label + "...");
+                LOGGER.info("Exporting edges with label {}...", label);
             writeLine("-- -----------------------------------------------------");
             writeLine("-- Edge data for label " + label);
             writeLine("-- -----------------------------------------------------");
@@ -374,7 +374,7 @@ final class SQLDump {
             }
             for (final String labelKey : batches.keySet()) {
                 final List<Edge> batch = batches.get(labelKey);
-                if (batch.size() > 0) {
+                if (!batch.isEmpty()) {
                     final String[] labelParts = StringUtils.split(labelKey, "|", 2);
                     writeEdgeInsertBatch(label, tableNameProvider.getEdgeTableName(label, labelParts[0], labelParts[1]),
                                          batch);

@@ -83,18 +83,18 @@ public class SQLExporter {
     private boolean verifyWorkspaceExists(final String workspacePath) {
         if (StringUtils.isEmpty(workspacePath) || !Paths.get(workspacePath).toFile().exists()) {
             if (LOGGER.isErrorEnabled())
-                LOGGER.error("Workspace path '" + workspacePath + "' was not found");
+                LOGGER.error("Workspace path '{}' was not found", workspacePath);
             return false;
         }
         if (LOGGER.isInfoEnabled())
-            LOGGER.info("Using workspace directory '" + workspacePath + "'");
+            LOGGER.info("Using workspace directory '{}'", workspacePath);
         return true;
     }
 
     private void exportSQL(final String workspacePath, final Integer insertBatchSize, final String schemaName,
                            final Target target) {
         if (LOGGER.isInfoEnabled())
-            LOGGER.info("Creating sql dump for target " + target + "...");
+            LOGGER.info("Creating sql dump for target {}...", target);
         Path databasePath = Paths.get(workspacePath, "sql", "dump.sql");
         try (final OutputStream stream = Files.newOutputStream(databasePath);
              final OutputStreamWriter streamWriter = new OutputStreamWriter(stream, StandardCharsets.UTF_8);
@@ -112,7 +112,7 @@ public class SQLExporter {
             dump.write(tableNameProvider);
         } catch (Exception e) {
             if (LOGGER.isErrorEnabled())
-                LOGGER.error("Failed to create sql database '" + databasePath + "'", e);
+                LOGGER.error("Failed to create sql database '{}'", databasePath, e);
         }
     }
 
